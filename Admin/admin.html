@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administración | TuPlato</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="../index.html"><span class="admin-brand-mark">TP</span><span>TuPlato <small>ADMIN</small></span></a>
+    <div class="admin-top-actions"><span id="adminUserName"></span><button id="adminThemeButton" class="admin-ghost-button" onclick="alternarTemaAdmin()" aria-label="Cambiar tema">☾</button><button class="admin-ghost-button" onclick="volverATienda()">Ver tienda</button><button class="admin-logout" onclick="cerrarSesionAdmin()">Cerrar sesión</button></div>
+  </header>
+
+  <main class="admin-shell">
+    <section class="admin-hero">
+      <div><span class="admin-kicker">CENTRO DE CONTROL</span><h1>Administración</h1><p>Gestiona el menú, los pedidos y la operación del día.</p></div>
+      <div class="admin-live"><span></span> Sistema operativo</div>
+    </section>
+
+    <div class="admin-layout">
+      <nav class="admin-tabs" aria-label="Secciones de administración">
+        <span class="admin-nav-label">OPERACIÓN</span>
+        <button class="admin-tab active" data-tab="resumen" onclick="cambiarPestana('resumen')">Resumen</button>
+        <button class="admin-tab" data-tab="pedidos" onclick="cambiarPestana('pedidos')">Pedidos</button>
+        <button class="admin-tab" data-tab="precios" onclick="cambiarPestana('precios')">Catálogo e inventario</button>
+        <button class="admin-tab" data-tab="categorias" onclick="cambiarPestana('categorias')">Categorías</button>
+        <button class="admin-tab" data-tab="clientes" onclick="cambiarPestana('clientes')">Clientes</button>
+      </nav>
+
+      <div class="admin-content">
+        <section id="tabResumen" class="admin-view active">
+          <div class="admin-section-heading"><div><span class="admin-kicker">VISTA GENERAL</span><h2>Resumen operativo</h2><p>Estado actual de pedidos, ventas y catálogo.</p></div></div>
+          <div class="admin-order-metrics admin-dashboard-metrics"><div><span>Ventas registradas</span><strong id="dashboardVentas">$0</strong></div><div><span>Pedidos abiertos</span><strong id="dashboardAbiertos">0</strong></div><div><span>Listos para entregar</span><strong id="dashboardListos">0</strong></div><div><span>Platos en catálogo</span><strong id="dashboardPlatos">0</strong></div></div>
+          <div class="admin-dashboard-grid">
+            <section class="admin-overview-panel"><div class="admin-panel-heading"><div><span class="admin-kicker">ACTIVIDAD</span><h3>Pedidos recientes</h3></div><button class="admin-text-button" onclick="cambiarPestana('pedidos')">Ver pedidos</button></div><div id="pedidosRecientes"></div></section>
+            <section class="admin-overview-panel"><div class="admin-panel-heading"><div><span class="admin-kicker">INVENTARIO</span><h3>Existencias bajas</h3></div><button class="admin-text-button" onclick="cambiarPestana('precios')">Ver catálogo</button></div><div id="alertasInventario"></div></section>
+          </div>
+        </section>
+
+        <section id="tabPedidos" class="admin-view">
+          <div class="admin-section-heading"><div><span class="admin-kicker">OPERACIÓN</span><h2>Pedidos</h2><p>Busca, filtra y actualiza los pedidos registrados en Supabase.</p></div><div class="admin-summary"><strong id="totalPedidos">0</strong><span>pedidos registrados</span></div></div>
+          <div class="admin-order-metrics"><div><span>Ventas registradas</span><strong id="ventasPedidos">$0</strong></div><div><span>En preparación</span><strong id="pedidosPreparacion">0</strong></div><div><span>Entregados</span><strong id="pedidosEntregados">0</strong></div></div>
+          <div class="admin-toolbar"><label class="admin-search"><span>Buscar pedido o cliente</span><input id="buscarPedido" type="search" placeholder="Ej: BD-1048 o Mariana..." oninput="renderPedidos()"></label><label class="admin-filter"><span>Estado</span><select id="filtroPedidoEstado" onchange="renderPedidos()"><option value="todos">Todos los estados</option><option>Recibido</option><option>En preparación</option><option>Listo para entregar</option><option>Entregado</option></select></label></div>
+          <div id="listaPedidos" class="admin-table-card"></div>
+        </section>
+
+        <section id="tabPrecios" class="admin-view">
+          <div class="admin-section-heading"><div><span class="admin-kicker">CATÁLOGO</span><h2>Productos e inventario</h2><p>Actualiza precios y registra existencias locales por plato.</p></div><div class="admin-summary"><strong id="totalPlatos">0</strong><span>platos en catálogo</span></div></div>
+          <div class="admin-toolbar"><label class="admin-search"><span>Buscar plato</span><input id="buscarPlato" type="search" placeholder="Nombre del plato..." oninput="renderPrecios()"></label><label class="admin-filter"><span>Categoría</span><select id="filtroCategoria" onchange="renderPrecios()"><option value="todas">Todas</option></select></label></div>
+          <div id="listaPrecios" class="admin-table-card"></div>
+        </section>
+
+        <section id="tabCategorias" class="admin-view">
+          <div class="admin-section-heading"><div><span class="admin-kicker">ORGANIZACIÓN</span><h2>Categorías</h2><p>Edita los nombres y descripciones visibles en la tienda.</p></div></div>
+          <div id="listaCategorias" class="admin-category-grid"></div>
+        </section>
+
+        <section id="tabClientes" class="admin-view">
+          <div class="admin-section-heading"><div><span class="admin-kicker">RELACIONES</span><h2>Clientes</h2><p>Contactos derivados de cuentas y pedidos registrados.</p></div><div class="admin-summary"><strong id="totalClientes">0</strong><span>clientes registrados</span></div></div>
+          <div class="admin-toolbar"><label class="admin-search"><span>Buscar cliente</span><input id="buscarCliente" type="search" placeholder="Nombre o correo..." oninput="renderClientes()"></label></div>
+          <div id="listaClientes" class="admin-table-card"></div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+  <div id="adminToast" class="admin-toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../supabase-client.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

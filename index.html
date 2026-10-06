@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>TuPlato | Cocina digital</title>
+  <meta name="description" content="Explora sabores, personaliza tus ingredientes y crea un plato a tu manera con TuPlato.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://images.unsplash.com">
+  <link rel="dns-prefetch" href="//images.unsplash.com">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Se aplica el tema antes de pintar para evitar el parpadeo blanco
+    (function () {
+      try {
+        var t = localStorage.getItem('tema');
+        if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro';
+        if (t === 'oscuro') document.documentElement.setAttribute('data-tema', 'oscuro');
+      } catch (e) {}
+    })();
+  </script>
+</head>
+
+<body>
+
+<!-- Navegación principal -->
+<header class="barra-superior">
+  <div class="bloque-izquierdo">
+    <button class="brand-lockup" onclick="volverAlInicio()" aria-label="TuPlato, inicio">
+      <span class="brand-icon">TP</span><span class="brand-name">TuPlato<small>COCINA A TU MANERA</small></span>
+    </button>
+    <button class="selector-ubicacion" onclick="abrirModal('modalUbicacion')">
+      <span class="ubicacion-label">ENTREGA EN</span><span id="txtUbicacion" class="ubicacion-actual">Medellín, Envigado</span>
+    </button>
+  </div>
+  <nav class="desktop-nav" aria-label="Navegación principal">
+    <a href="#categorias" onclick="irACategorias(); return false;">La carta</a>
+    <a href="#armador" onclick="abrirArmador(); return false;">Arma tu plato</a>
+  </nav>
+  <div class="contenedor-buscador">
+    <input type="search" id="inputBuscador" class="input-buscador" placeholder="Busca un plato o ingrediente" oninput="buscar(this.value)" autocomplete="off" aria-label="Buscar en el menú">
+  </div>
+  <div class="bloque-derecho">
+    <button class="boton-carrito" onclick="verCarrito()" aria-label="Abrir carrito, 0 productos" title="Carrito">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 9H6"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>
+      <span id="txtCarrito" class="carrito-contador" aria-hidden="true">0</span>
+    </button>
+    <button id="btnTema" class="boton-tema" onclick="alternarTema()" aria-label="Cambiar a modo oscuro" title="Cambiar a modo oscuro">
+      <svg class="icono-tema-luna" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.4 15.5A8.5 8.5 0 0 1 8.5 3.6 8.5 8.5 0 1 0 20.4 15.5Z"/></svg>
+      <svg class="icono-tema-sol" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+    </button>
+    <div class="menu-usuario-dropdown">
+      <button id="btnAuthTrigger" class="boton-user-trigger" onclick="gestionarClicAuth()" aria-label="Ingresar" title="Ingresar">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      </button>
+      <div id="dropdownUsuario" class="dropdown-contenido">
+        <a onclick="abrirPerfil()">Mi perfil</a>
+        <a id="enlaceAdmin" onclick="abrirPanelAdmin()" style="display:none;">Panel administrador</a>
+        <a onclick="cerrarSesion()">Cerrar sesión</a>
+      </div>
+    </div>
+    <button class="boton-sidebar-trigger" onclick="toggleSidebar()" aria-label="Abrir menú">☰</button>
+  </div>
+</header>
+
+<!-- Fondo del menú lateral -->
+<div id="overlaySidebar" class="overlay-sidebar" onclick="cerrarSidebar()"></div>
+
+<!-- Menú lateral -->
+<aside id="sidebarDerecha" class="sidebar-derecha">
+  <div class="sidebar-header">
+    <span class="sidebar-brand">TuPlato</span>
+    <span class="sidebar-cerrar" onclick="cerrarSidebar()">&times;</span>
+  </div>
+
+  <div class="sidebar-perfil" id="sidebarPerfil"></div>
+
+  <nav class="sidebar-nav">
+    <div class="sidebar-nav-item destacado" onclick="abrirArmador(); cerrarSidebar();"><span>Arma tu plato</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarFavoritos(); cerrarSidebar();"><span>♥ Mis recetas</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('asiatico'); cerrarSidebar();"><span id="navCatAsiatico">Asiático</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('oriental'); cerrarSidebar();"><span id="navCatOriental">Oriental</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('europeo'); cerrarSidebar();"><span id="navCatEuropeo">Europeo</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('latino'); cerrarSidebar();"><span id="navCatLatino">Latinoamericano</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('rapido'); cerrarSidebar();"><span id="navCatRapido">Rápido</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('vegetariano'); cerrarSidebar();"><span id="navCatVegetariano">Vegetariano</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarPlatos('vegano'); cerrarSidebar();"><span id="navCatVegano">Vegano</span></div>
+    <div class="sidebar-nav-item" onclick="mostrarSubcategoriasBebidas(); cerrarSidebar();"><span>Bebidas</span></div>
+
+    <div class="sidebar-nav-item sidebar-otros" onclick="toggleOtros()">
+      <span>Otros</span>
+      <span id="flechaOtros" class="sidebar-flecha">›</span>
+    </div>
+    <div id="submenuOtros" class="sidebar-submenu">
+      <div class="sidebar-subitem" onclick="alert('Próximamente: registro de restaurantes.')">Registra tu restaurante</div>
+      <div class="sidebar-subitem" onclick="alert('Próximamente: registro de repartidores.')">Quiero ser repartidor</div>
+    </div>
+  </nav>
+
+  <div class="sidebar-tema" onclick="alternarTema()">
+    <span id="txtTemaSidebar">Modo oscuro</span>
+    <span class="sidebar-flecha">›</span>
+  </div>
+
+  <div class="sidebar-ubicacion" onclick="abrirModal('modalUbicacion')">
+    <span class="sidebar-ubicacion-label">📍 Entregar en</span>
+    <span id="txtUbicacionSidebar" class="sidebar-ubicacion-actual">Medellín, Envigado</span>
+  </div>
+</aside>
+
+<!-- Modal de dirección -->
+<div id="modalUbicacion" class="fondo-modal">
+  <div class="modal-contenido">
+    <span class="cerrar-x" onclick="cerrarModal('modalUbicacion')">&times;</span>
+    <h3>Ingresa tu dirección</h3>
+    <p class="modal-nota">Elige tu zona para consultar disponibilidad y calcular el envío.</p>
+    <label class="campo-ubicacion">Zona de entrega
+      <select id="selectZonaEntrega" onchange="actualizarZonaEntrega()">
+        <option value="">Selecciona una zona</option>
+        <option value="envigado">Envigado</option>
+        <option value="medellin">Medellín</option>
+        <option value="sabaneta">Sabaneta</option>
+        <option value="bello">Bello</option>
+        <option value="rionegro">Rionegro</option>
+      </select>
+    </label>
+    <div id="estadoZonaEntrega" class="estado-zona-entrega" aria-live="polite">Selecciona una zona para continuar.</div>
+    <input type="text" id="inputCiudad" placeholder="Ej: Medellín, Envigado" value="Medellín, Envigado">
+    <input type="text" id="inputDireccion" placeholder="Ej: Calle 37 Sur #43A-12, Apto 502">
+    <button class="boton-bloque" onclick="guardarUbicacion()">Confirmar dirección</button>
+  </div>
+</div>
+
+<!-- Modal de autenticación -->
+<div id="modalAuth" class="fondo-modal">
+  <div class="modal-contenido">
+    <span class="cerrar-x" onclick="cerrarModal('modalAuth')">&times;</span>
+    <div id="vistaLogin">
+      <h3>Iniciar sesión</h3>
+      <input type="email" id="loginCorreo" placeholder="Correo electrónico">
+      <input type="password" id="loginPass" placeholder="Contraseña">
+      <button class="boton-bloque" onclick="procesarLogin()">Ingresar</button>
+      <p class="texto-cambio">¿Eres nuevo? <span onclick="cambiarVistaAuth('registro')">Regístrate aquí</span></p>
+    </div>
+    <div id="vistaRegistro" style="display:none;">
+      <h3>Crear cuenta</h3>
+      <input type="text" id="regNombre" placeholder="Nombre">
+      <input type="email" id="regCorreo" placeholder="Correo electrónico">
+      <input type="password" id="regPass" placeholder="Contraseña">
+      <button class="boton-bloque" onclick="procesarRegistro()">Crear cuenta</button>
+      <p class="texto-cambio">¿Ya tienes cuenta? <span onclick="cambiarVistaAuth('login')">Inicia sesión</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de perfil -->
+<div id="modalPerfil" class="fondo-modal">
+  <div class="modal-contenido">
+    <span class="cerrar-x" onclick="cerrarModal('modalPerfil')">&times;</span>
+    <h3>Mi perfil</h3>
+    <div class="perfil-info">
+      <p><strong>Nombre:</strong> <span id="perfilNombre">-</span></p>
+      <p><strong>Correo:</strong> <span id="perfilCorreo">-</span></p>
+    </div>
+    <button class="boton-bloque" onclick="cerrarModal('modalPerfil')">Entendido</button>
+  </div>
+</div>
+
+<!-- Modal del carrito -->
+<div id="modalCarrito" class="fondo-modal">
+  <div class="modal-contenido modal-carrito">
+    <span class="cerrar-x" onclick="cerrarModal('modalCarrito')">&times;</span>
+    <div class="carrito-cabecera"><div><span class="carrito-kicker">TU PEDIDO</span><h3>Tu carrito</h3></div><span id="contadorCarritoModal" class="carrito-contador">0 productos</span></div>
+    <div id="listaCarrito"></div>
+    <div id="resumenCarrito" class="carrito-resumen"></div>
+    <div class="carrito-entrega"><div class="carrito-entrega-cab"><strong>Entrega</strong><button class="carrito-link" onclick="cerrarModal('modalCarrito'); abrirModal('modalUbicacion')">Editar dirección</button></div><div id="direccionCarrito" class="carrito-direccion">Agrega una dirección para calcular el envío.</div></div>
+    <label class="carrito-pago"><span>Método de pago</span><select id="metodoPago"><option value="contraentrega">Pago contra entrega</option><option value="transferencia">Transferencia bancaria</option><option value="tarjeta">Tarjeta al recibir</option></select></label>
+    <button class="boton-bloque" onclick="cerrarModal('modalCarrito')">Seguir comprando</button>
+    <button id="btnConfirmarPedido" class="boton-bloque oscuro" onclick="finalizarPedido()">Confirmar pedido</button>
+  </div>
+</div>
+
+<!-- Inicio -->
+<main id="inicio" class="home-screen">
+  <section class="portada" aria-labelledby="homeTitle">
+    <div class="portada-copy">
+      <span class="hero-kicker">COCINA A TU MANERA · MEDELLÍN</span>
+      <h1 class="titulo" id="homeTitle">Tu antojo<br><em>Tu manera</em></h1>
+      <p class="subtitulo">Explora sabores del mundo, cambia lo que quieras y crea un plato que se sienta muy tuyo.</p>
+      <div class="portada-acciones">
+        <button class="boton principal" onclick="irACategorias()">Explorar la carta</button>
+        <button class="boton-sec" onclick="abrirArmador()">＋ Arma tu plato</button>
+      </div>
+      <div class="hero-notas"><span> Ingredientes a tu gusto</span><span> Entrega local</span></div>
+    </div>
+    <div class="portada-visual">
+      <img src="https://images.unsplash.com/photo-1641536618422-2cf0bbd10014?q=80&w=627&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Chef cocinando en una cocina profesional" fetchpriority="high">
+      <div class="hero-pie-foto"><span>HECHO AL MOMENTO</span><span>TuPlato · Medellín</span></div>
+    </div>
+  </section>
+
+  <section class="home-explorer" aria-labelledby="homeCategoriesTitle">
+    <div class="home-section-heading">
+      <div><span class="section-kicker">ELIGE TU RUTA</span><h2 id="homeCategoriesTitle">¿Qué se te antoja?</h2></div>
+      <button class="texto-link" onclick="irACategorias()">Ver todas las categorías</button>
+    </div>
+    <div id="homeCategoryGrid" class="home-category-grid"></div>
+  </section>
+
+  <section class="home-about" id="nosotros" aria-labelledby="aboutTitle">
+    <div class="home-about-inner">
+      <div class="home-about-visual">
+        <img src="https://images.pexels.com/photos/6294402/pexels-photo-6294402.jpeg" alt="Plato fresco preparado con vegetales y granos" loading="lazy">
+      </div>
+      <div class="home-about-copy">
+        <span class="section-kicker">SOBRE TUPLATO</span>
+        <h2 id="aboutTitle">Una mesa hecha a tu manera.</h2>
+        <p>Reunimos sabores de distintas cocinas para que elijas, combines ingredientes y encuentres un plato que se sienta tuyo. Cada antojo empieza con una buena idea y termina como tú lo imaginaste.</p>
+        <button class="boton-sec" onclick="irACategorias()">Conoce la carta</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-gallery" id="galeria" aria-labelledby="galleryTitle">
+    <div class="home-gallery-inner">
+      <div class="home-gallery-heading">
+        <div><span class="section-kicker">DE NUESTRA COCINA</span><h2 id="galleryTitle">Un vistazo al sabor.</h2></div>
+      </div>
+      <div class="gallery-track" id="homeGallery" role="region" aria-label="Galería de cocina y platos" tabindex="0">
+        <figure class="gallery-item"><img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1000&q=82" alt="Mesa servida con diferentes platos para compartir" loading="lazy"><figcaption>Sabores para compartir</figcaption></figure>
+        <figure class="gallery-item"><img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=1000&q=82" alt="Preparación de alimentos a la parrilla" loading="lazy"><figcaption>Preparado al momento</figcaption></figure>
+        <figure class="gallery-item"><img src="https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=1000&q=82" alt="Ensalada fresca con vegetales y granos" loading="lazy"><figcaption>Ingredientes frescos</figcaption></figure>
+        <figure class="gallery-item"><img src="https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=1000&q=82" alt="Selección de sushi recién preparado" loading="lazy"><figcaption>Un viaje entre cocinas</figcaption></figure>
+        <figure class="gallery-item"><img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1000&q=82" alt="Pizza artesanal recién horneada" loading="lazy"><figcaption>Tu próximo antojo</figcaption></figure>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Categorías -->
+<div id="categorias" class="seccion-categorias">
+  <h1>¿Qué se te antoja hoy?</h1>
+  <p class="seccion-sub">Empieza desde cero o toma un plato de la carta y ajústalo a tu gusto</p>
+  <div class="contenedor-grid" id="gridCategorias"></div>
+  <button class="boton boton-volver-inicio" onclick="volverAlInicio()">Volver al inicio</button>
+</div>
+
+<!-- Categorías de bebidas -->
+<div id="subBebidas" class="seccion-categorias">
+  <h1>Bebidas</h1>
+  <p class="seccion-sub">Selecciona el tipo de bebida</p>
+  <div class="contenedor-grid">
+    <div class="tarjeta-categoria bebida-asiatica" onclick="mostrarPlatos('bebidasAsiaticas')"><img src="https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=900&q=80" alt="Té asiático servido frío" loading="lazy"><span>Bebidas asiáticas</span><small>Infusiones y sabores de Asia</small></div>
+    <div class="tarjeta-categoria bebida-americana" onclick="mostrarPlatos('bebidasAmericanas')"><img src="https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=900&q=80" alt="Bebidas cítricas frescas" loading="lazy"><span>Bebidas americanas</span><small>Jugos y cafés frescos</small></div>
+    <div class="tarjeta-categoria bebida-europea" onclick="mostrarPlatos('bebidasEuropeas')"><img src="https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=900&q=80" alt="Bebidas servidas para compartir" loading="lazy"><span>Bebidas europeas</span><small>Cafés y tés clásicos</small></div>
+    <div class="tarjeta-categoria bebida-gaseosa" onclick="mostrarPlatos('bebidasGaseosas')"><img src="https://images.unsplash.com/photo-1581006852262-e4307cf6283a?auto=format&fit=crop&w=900&q=80" alt="Bebida fría con hielo" loading="lazy"><span>Gaseosas y frías</span><small>Refrescantes para acompañar</small></div>
+  </div>
+  <button class="boton" onclick="volverACategorias()">Volver a categorías</button>
+</div>
+
+<!-- Listado de platos -->
+<div id="menu" class="menu"></div>
+
+<!-- Resultados de búsqueda -->
+<div id="pantallaBusqueda" class="pantalla-busqueda"></div>
+
+<!-- Favoritos y recetas guardadas -->
+<div id="favoritos" class="pantalla-favoritos"></div>
+
+<!-- Detalle de receta -->
+<div id="detalleRender" class="pantalla-detalle"></div>
+
+<!-- Armador de platos -->
+<div id="armador" class="pantalla-armador"></div>
+
+<!-- Barra inferior -->
+<div id="barraAgregar" class="barra-agregar">
+  <div class="barra-agregar-interior">
+    <div class="control-cantidad">
+      <button class="btn-cantidad" onclick="cambiarCantidad(-1)">−</button>
+      <span class="txt-cantidad" id="txtCantidad">1</span>
+      <button class="btn-cantidad" onclick="cambiarCantidad(1)">+</button>
+    </div>
+    <button class="btn-agregar-carrito" onclick="agregarAlCarrito()">
+      <span>Agregar al carrito</span>
+      <span class="total-carrito" id="txtTotalBarra">$0</span>
+    </button>
+  </div>
+</div>
+
+<div id="contenedorToasts" class="contenedor-toasts" aria-live="polite" aria-atomic="true"></div>
+
+<footer class="site-footer">
+  <div class="footer-main">
+    <div class="footer-brand"><span class="brand-icon">TP</span><div><strong>TuPlato</strong><span>Tu buffet, a tu manera.</span></div></div>
+    <p>Una mesa llena de ideas. Tú eliges lo que va en tu plato.</p>
+    <div class="footer-links"><button onclick="abrirLegal('privacidad')">Política de privacidad</button><button onclick="abrirLegal('cookies')">Política de cookies</button><button onclick="mostrarAvisoCookies()">Preferencias de privacidad</button></div>
+  </div>
+  <div class="footer-bottom"><span>© 2026 TuPlato. Todos los derechos reservados.</span><span>Hecho con sabor por Jhayco Torres, Mariana Osorio e Isabela Corres.</span></div>
+</footer>
+
+<aside id="avisoCookies" class="aviso-cookies" role="status" hidden>
+  <div><strong>Tu privacidad importa.</strong><p>Usamos almacenamiento local para recordar tu carrito y preferencias. No usamos cookies publicitarias ni analítica.</p></div>
+  <div class="aviso-cookies-acciones"><button onclick="abrirLegal('cookies')">Saber más</button><button class="aviso-aceptar" onclick="aceptarAvisoCookies()">Entendido</button></div>
+</aside>
+
+<div id="modalLegal" class="fondo-modal modal-legal" onclick="if(event.target === this) cerrarModal('modalLegal')">
+  <section class="modal-contenido legal-contenido" role="dialog" aria-modal="true" aria-labelledby="legalModalTitle">
+    <button class="cerrar-x" onclick="cerrarModal('modalLegal')" aria-label="Cerrar">×</button>
+    <span class="section-kicker">TUPLATO · INFORMACIÓN</span>
+    <h2 id="legalModalTitle"></h2>
+    <div id="legalModalText" class="legal-texto"></div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-client.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
