@@ -1508,7 +1508,7 @@ function ejecutarBusqueda(query) {
       <h2 class="busqueda-titulo">Resultados de búsqueda</h2>
       <p class="busqueda-subtitulo">
         ${total > 0 ? `<strong>${total}</strong> resultado${total !== 1 ? 's' : ''} para` : 'Sin resultados para'}
-        <span class="busqueda-query">"${query}"</span>
+        <span class="busqueda-query">"${escaparHTML(query)}"</span>
       </p>
     </div>`;
 
@@ -1546,7 +1546,7 @@ function ejecutarBusqueda(query) {
     }
 
     if (porIngrediente.length) {
-      html += `<div class="seccion-resultado"><div class="seccion-resultado-titulo">Contienen "${query}" (${porIngrediente.length})</div>`;
+      html += `<div class="seccion-resultado"><div class="seccion-resultado-titulo">Contienen "${escaparHTML(query)}" (${porIngrediente.length})</div>`;
       porIngrediente.forEach(p => {
         const coincide = p.ing.filter(id => ING[id] && normalizar(ING[id].n).includes(q)).map(id => ING[id].n).join(', ');
         html += filaResultadoPlato(p, query, coincide);
@@ -1591,10 +1591,6 @@ function abrirPanelAdmin() {
   const u = leerLocal('usuarioSesion', null);
   if (!esAdministrador(u)) { alert('Esta sección es exclusiva para administradores.'); return; }
   window.location.href = 'Admin/admin.html';
-}
-
-function obtenerPedidosAdmin() {
-  return [];
 }
 
 // Renderizado de categorías
@@ -1772,12 +1768,6 @@ async function procesarLogin() {
   try {
     const usuario = await tuPlatoDb.iniciarSesion(correo, pass);
     sesionActual = usuario;
-    localStorage.setItem('usuarioSesion', JSON.stringify({
-      id: usuario.id,
-      nombre: usuario.nombre,
-      correo: usuario.correo,
-      admin: usuario.admin
-    }));
 
     cerrarModal('modalAuth');
     if (esAdministrador(usuario)) { window.location.href = 'Admin/admin.html'; return; }
@@ -1814,9 +1804,20 @@ async function cerrarSesion() {
     await tuPlatoDb.cerrarSesion();
   } catch (error) {
     console.error('Error cerrando sesión en Supabase:', error);
+    alert('No se pudo cerrar la sesión. Revisa tu conexión e inténtalo de nuevo.');
+    return;
   }
   sesionActual = null;
-  localStorage.removeItem('usuarioSesion');
+  carrito = [];
+  favoritos = [];
+  recetasGuardadas = [];
+  direccionEntrega = null;
+  document.getElementById('selectZonaEntrega').value = '';
+  document.getElementById('inputCiudad').value = 'Medellín, Envigado';
+  document.getElementById('inputDireccion').value = '';
+  document.getElementById('txtUbicacion').innerText = 'Medellín, Envigado';
+  document.getElementById('txtUbicacionSidebar').innerText = 'Medellín, Envigado';
+  actualizarBotonCarrito();
   verificarSesion();
   alert('Sesión cerrada.');
 }
@@ -1871,12 +1872,11 @@ window.onload = async function() {
   }
   try {
     sesionActual = await tuPlatoDb.obtenerUsuarioActual();
-    if (sesionActual) localStorage.setItem('usuarioSesion', JSON.stringify(sesionActual));
-    else localStorage.removeItem('usuarioSesion');
   } catch (error) {
     sesionActual = null;
     console.error('No se pudo restaurar la sesión de Supabase:', error);
   }
+  try { localStorage.removeItem('usuarioSesion'); } catch (error) {}
   aplicarTema(temaGuardado());
   mostrarAvisoCookies();
   cargarCarrito();

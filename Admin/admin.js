@@ -31,28 +31,12 @@ let precios = {};
 let perfilesClientes = [];
 let usuarioAdminActual = null;
 
-const pedidosIniciales = [
-  { id: '#BD-1048', cliente: 'Mariana López', detalle: 'Bowl de quinoa + bebida', total: 32000, estado: 'En preparación', hora: '12:42 p. m.' },
-  { id: '#BD-1047', cliente: 'Juan Esteban', detalle: 'Hamburguesa clásica x2', total: 44000, estado: 'Listo para entregar', hora: '12:28 p. m.' },
-  { id: '#BD-1046', cliente: 'Laura Gómez', detalle: 'Curry de garbanzos', total: 24000, estado: 'Entregado', hora: '11:56 a. m.' },
-  { id: '#BD-1045', cliente: 'Carlos Ruiz', detalle: 'Pizza pepperoni', total: 28000, estado: 'En preparación', hora: '11:41 a. m.' }
-];
-
 function esAdministrador() {
   return Boolean(usuarioAdminActual && usuarioAdminActual.admin === true);
 }
 
 function escapar(texto) {
   return String(texto).replace(/[&<>"']/g, caracter => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[caracter]));
-}
-
-function leerLocal(clave, respaldo) {
-  try {
-    const valor = localStorage.getItem(clave);
-    return valor ? JSON.parse(valor) : respaldo;
-  } catch (error) {
-    return respaldo;
-  }
 }
 
 async function cargarDatos() {
@@ -262,8 +246,12 @@ function mostrarToast(mensaje) {
 
 function volverATienda() { window.location.href = '../index.html'; }
 async function cerrarSesionAdmin() {
-  await tuPlatoDb.cerrarSesion();
-  localStorage.removeItem('usuarioSesion');
+  try {
+    await tuPlatoDb.cerrarSesion();
+  } catch (error) {
+    mostrarToast(error.message || 'No se pudo cerrar la sesión.');
+    return;
+  }
   volverATienda();
 }
 

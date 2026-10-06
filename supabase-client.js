@@ -32,6 +32,11 @@
     };
   }
 
+  function limpiarDatosLocales() {
+    ['usuarioSesion', 'carritoBuffet', 'direccionBuffet', 'favoritosBuffet', 'recetasBuffet']
+      .forEach(clave => localStorage.removeItem(clave));
+  }
+
   window.tuPlatoDb = {
     async obtenerUsuarioActual() {
       return obtenerUsuarioActual();
@@ -53,6 +58,10 @@
     async cerrarSesion() {
       const { error } = await client.auth.signOut();
       if (error) throw error;
+      limpiarDatosLocales();
+    },
+    limpiarDatosLocales() {
+      limpiarDatosLocales();
     },
     async crearPedido(pedido) {
       return exigirOk(await client.from('orders').insert({
