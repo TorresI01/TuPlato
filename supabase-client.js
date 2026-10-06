@@ -60,18 +60,20 @@
       if (error) throw error;
       limpiarDatosLocales();
     },
+    async sembrarCatalogoPrecios(catalogo) {
+      return exigirOk(await client.rpc('seed_pricing_catalog', { p_catalog: catalogo }));
+    },
     limpiarDatosLocales() {
       limpiarDatosLocales();
     },
     async crearPedido(pedido) {
-      return exigirOk(await client.from('orders').insert({
-        detail: pedido.detail,
-        total: pedido.total,
-        delivery_city: pedido.delivery_city,
-        delivery_address: pedido.delivery_address,
-        delivery_zone: pedido.delivery_zone,
-        payment_method: pedido.payment_method
-      }).select('order_number').single());
+      return exigirOk(await client.rpc('create_order', {
+        p_items: pedido.items,
+        p_delivery_city: pedido.delivery_city,
+        p_delivery_address: pedido.delivery_address,
+        p_delivery_zone: pedido.delivery_zone,
+        p_payment_method: pedido.payment_method
+      }));
     },
     async obtenerPedidos() {
       return exigirOk(await client.from('orders')

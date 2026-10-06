@@ -58,6 +58,7 @@ create table if not exists public.orders (
   customer_name text not null,
   customer_email text not null,
   detail text not null,
+  line_items jsonb not null default '[]'::jsonb,
   total integer not null check (total >= 0),
   status text not null default 'Recibido'
     check (status in ('Recibido', 'En preparación', 'Listo para entregar', 'Entregado')),
@@ -69,6 +70,7 @@ create table if not exists public.orders (
   primary key (order_number)
 );
 
+alter table public.orders add column if not exists line_items jsonb not null default '[]'::jsonb;
 alter table public.orders alter column user_id set default auth.uid();
 alter table public.orders drop constraint if exists orders_total_check;
 alter table public.orders drop constraint if exists orders_positive_total;
@@ -119,6 +121,339 @@ create trigger set_order_identity_before_insert
   for each row execute procedure public.set_order_identity();
 
 revoke all on function public.set_order_identity() from public;
+grant execute on function public.set_order_identity() to authenticated;
+
+create or replace function public.seed_pricing_catalog(p_catalog jsonb)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not (select public.is_admin()) then
+    raise exception 'Administrator access required';
+  end if;
+  if p_catalog is null or p_catalog->>'version' <> '1' then
+    raise exception 'Invalid pricing catalog version';
+  end if;
+  if jsonb_typeof(p_catalog->'recipes') <> 'array'
+     or jsonb_array_length(p_catalog->'recipes') = 0
+     or jsonb_typeof(p_catalog->'ingredients') <> 'object'
+     or jsonb_typeof(p_catalog->'bases') <> 'object'
+     or jsonb_typeof(p_catalog->'preparations') <> 'object'
+     or jsonb_typeof(p_catalog->'sizes') <> 'object'
+     or jsonb_typeof(p_catalog->'rules') <> 'object' then
+    raise exception 'Invalid pricing catalog structure';
+  end if;
+
+  insert into public.app_settings (key, value)
+  values ('pricingCatalog', p_catalog)
+  on conflict (key) do nothing;
+  return true;
+end;
+$$;
+
+create or replace function public.quote_order_items(p_items jsonb, p_delivery_zone text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  pricing_catalog jsonb;
+  admin_prices jsonb;
+  rules jsonb;
+  zone_rules jsonb;
+  item jsonb;
+  recipe jsonb;
+  ingredient jsonb;
+  base jsonb;
+  removed_ids jsonb;
+  added_ids jsonb;
+  vegetables jsonb;
+  sauces jsonb;
+  toppings jsonb;
+  selected_array jsonb;
+  validated_items jsonb := '[]'::jsonb;
+  detail_parts text[] := array[]::text[];
+  item_type text;
+  item_id text;
+  selected_id text;
+  base_id text;
+  protein_id text;
+  prep_id text;
+  default_prep_id text;
+  size_id text;
+  override_price text;
+  recipe_index integer;
+  quantity integer;
+  distinct_count integer;
+  item_count integer;
+  unit_price numeric;
+  item_total numeric;
+  subtotal numeric := 0;
+  shipping numeric;
+  total numeric;
+begin
+  if jsonb_typeof(p_items) is distinct from 'array' then
+    raise exception 'Cart must be an array';
+  end if;
+  if jsonb_array_length(p_items) < 1 or jsonb_array_length(p_items) > 20 then
+    raise exception 'A cart must contain between 1 and 20 items';
+  end if;
+
+  select value into pricing_catalog
+  from public.app_settings
+  where key = 'pricingCatalog';
+  if pricing_catalog is null then
+    raise exception 'The server pricing catalog has not been initialized';
+  end if;
+
+  select value into admin_prices
+  from public.app_settings
+  where key = 'adminPrecios';
+  admin_prices := coalesce(admin_prices, '{}'::jsonb);
+  rules := pricing_catalog->'rules';
+
+  for item in select value from jsonb_array_elements(p_items) as cart(value) loop
+    if jsonb_typeof(item->'quantity') is distinct from 'number'
+       or (item->>'quantity')::numeric <> trunc((item->>'quantity')::numeric)
+       or (item->>'quantity')::integer < 1
+       or (item->>'quantity')::integer > 20 then
+      raise exception 'Invalid item quantity';
+    end if;
+    quantity := (item->>'quantity')::integer;
+    item_type := item->>'type';
+
+    if item_type = 'recipe' then
+      if jsonb_typeof(item->'recipeIndex') is distinct from 'number'
+         or (item->>'recipeIndex')::numeric <> trunc((item->>'recipeIndex')::numeric) then
+        raise exception 'Invalid recipe index';
+      end if;
+      recipe_index := (item->>'recipeIndex')::integer;
+      if recipe_index < 0 or recipe_index >= jsonb_array_length(pricing_catalog->'recipes') then
+        raise exception 'Unknown recipe';
+      end if;
+      recipe := pricing_catalog->'recipes'->recipe_index;
+      if recipe is null then raise exception 'Unknown recipe'; end if;
+
+      override_price := admin_prices->>recipe_index::text;
+      if override_price is not null then
+        if override_price !~ '^[0-9]+$' then raise exception 'Invalid administrator price'; end if;
+        unit_price := override_price::numeric;
+      else
+        unit_price := (recipe->>'price')::numeric;
+      end if;
+
+      removed_ids := coalesce(item->'removed', '[]'::jsonb);
+      added_ids := coalesce(item->'added', '[]'::jsonb);
+      if jsonb_typeof(removed_ids) is distinct from 'array' or jsonb_typeof(added_ids) is distinct from 'array' then
+        raise exception 'Invalid recipe modifications';
+      end if;
+      select count(*)::integer, count(distinct value)::integer
+        into item_count, distinct_count
+        from jsonb_array_elements_text(removed_ids) as entries(value);
+      if item_count <> distinct_count then raise exception 'Duplicate removed ingredient'; end if;
+      select count(*)::integer, count(distinct value)::integer
+        into item_count, distinct_count
+        from jsonb_array_elements_text(added_ids) as entries(value);
+      if item_count <> distinct_count then raise exception 'Duplicate added ingredient'; end if;
+
+      for item_id in select value from jsonb_array_elements_text(removed_ids) as entries(value) loop
+        if not ((recipe->'ingredients') ? item_id) then raise exception 'Cannot remove an unlisted ingredient'; end if;
+        ingredient := pricing_catalog->'ingredients'->item_id;
+        if ingredient is null then raise exception 'Unknown ingredient'; end if;
+        if ingredient->>'group' = 'proteina' then
+          unit_price := unit_price - (ingredient->>'price')::numeric;
+        end if;
+      end loop;
+
+      for item_id in select value from jsonb_array_elements_text(added_ids) as entries(value) loop
+        if (recipe->'ingredients') ? item_id then raise exception 'Ingredient is already in the recipe'; end if;
+        ingredient := pricing_catalog->'ingredients'->item_id;
+        if ingredient is null then raise exception 'Unknown ingredient'; end if;
+        unit_price := unit_price + (ingredient->>'price')::numeric;
+      end loop;
+
+      prep_id := item->>'preparation';
+      default_prep_id := recipe->>'preparation';
+      if coalesce((recipe->>'drink')::boolean, false) then
+        if jsonb_array_length(removed_ids) <> 0 or jsonb_array_length(added_ids) <> 0 or prep_id is not null then
+          raise exception 'Beverages cannot have ingredient or preparation changes';
+        end if;
+      else
+        if prep_id is null or not (pricing_catalog->'preparations' ? prep_id) then
+          raise exception 'Invalid preparation';
+        end if;
+        if default_prep_id is not null then
+          if not (pricing_catalog->'preparations' ? default_prep_id) then
+            raise exception 'Invalid recipe preparation';
+          end if;
+          unit_price := unit_price
+            + (pricing_catalog->'preparations'->>prep_id)::numeric
+            - (pricing_catalog->'preparations'->>default_prep_id)::numeric;
+        end if;
+      end if;
+
+      size_id := item->>'size';
+      if size_id is null or not (pricing_catalog->'sizes' ? size_id) then
+        raise exception 'Invalid serving size';
+      end if;
+      unit_price := greatest((rules->>'minimumRecipe')::numeric, unit_price)
+        + (pricing_catalog->'sizes'->>size_id)::numeric;
+      if unit_price < 0 or unit_price <> trunc(unit_price) then raise exception 'Invalid computed price'; end if;
+      item_total := unit_price * quantity;
+      if item_total > 2147483647 then raise exception 'Order item total is too large'; end if;
+      subtotal := subtotal + item_total;
+      detail_parts := array_append(detail_parts, format('%s x%s', recipe->>'name', quantity));
+      validated_items := validated_items || jsonb_build_array(jsonb_build_object(
+        'type', 'recipe', 'recipeIndex', recipe_index, 'removed', removed_ids, 'added', added_ids,
+        'preparation', prep_id, 'size', size_id, 'quantity', quantity,
+        'unitPrice', unit_price::integer, 'lineTotal', item_total::integer
+      ));
+
+    elsif item_type = 'custom' then
+      base_id := item->>'base';
+      base := pricing_catalog->'bases'->base_id;
+      if base is null then raise exception 'Unknown custom dish base'; end if;
+      unit_price := (base->>'price')::numeric;
+
+      protein_id := item->>'protein';
+      if protein_id is not null then
+        ingredient := pricing_catalog->'ingredients'->protein_id;
+        if ingredient is null or ingredient->>'group' <> 'proteina' then raise exception 'Invalid protein'; end if;
+        unit_price := unit_price + (ingredient->>'price')::numeric;
+      end if;
+
+      vegetables := coalesce(item->'vegetables', '[]'::jsonb);
+      sauces := coalesce(item->'sauces', '[]'::jsonb);
+      toppings := coalesce(item->'toppings', '[]'::jsonb);
+      if jsonb_typeof(vegetables) is distinct from 'array'
+        or jsonb_typeof(sauces) is distinct from 'array'
+        or jsonb_typeof(toppings) is distinct from 'array' then
+        raise exception 'Invalid custom dish ingredients';
+      end if;
+      for item_id, selected_array in select 'vegetal', vegetables union all select 'salsa', sauces union all select 'topping', toppings loop
+        if jsonb_array_length(selected_array) > 20 then raise exception 'Too many ingredients'; end if;
+        select count(*)::integer, count(distinct value)::integer
+          into item_count, distinct_count
+          from jsonb_array_elements_text(selected_array) as entries(value);
+        if item_count <> distinct_count then raise exception 'Duplicate custom ingredient'; end if;
+        for selected_id in select value from jsonb_array_elements_text(selected_array) as entries(value) loop
+          ingredient := pricing_catalog->'ingredients'->selected_id;
+          if ingredient is null or ingredient->>'group' <> item_id then raise exception 'Invalid custom ingredient'; end if;
+          if item_id = 'topping' then unit_price := unit_price + (ingredient->>'price')::numeric; end if;
+        end loop;
+      end loop;
+
+      unit_price := unit_price
+        + greatest(0, jsonb_array_length(vegetables) - (base->>'includedVegetables')::integer) * (rules->>'extraVegetable')::numeric
+        + greatest(0, jsonb_array_length(sauces) - (base->>'includedSauces')::integer) * (rules->>'extraSauce')::numeric;
+      prep_id := item->>'preparation';
+      size_id := item->>'size';
+      if prep_id is null or not (pricing_catalog->'preparations' ? prep_id) then raise exception 'Invalid preparation'; end if;
+      if size_id is null or not (pricing_catalog->'sizes' ? size_id) then raise exception 'Invalid serving size'; end if;
+      unit_price := unit_price + (pricing_catalog->'preparations'->>prep_id)::numeric
+        + (pricing_catalog->'sizes'->>size_id)::numeric;
+      if unit_price <= 0 or unit_price <> trunc(unit_price) then raise exception 'Invalid computed price'; end if;
+      item_total := unit_price * quantity;
+      if item_total > 2147483647 then raise exception 'Order item total is too large'; end if;
+      subtotal := subtotal + item_total;
+      detail_parts := array_append(detail_parts, format('%s personalizado x%s', base->>'name', quantity));
+      validated_items := validated_items || jsonb_build_array(jsonb_build_object(
+        'type', 'custom', 'base', base_id, 'protein', item->'protein',
+        'vegetables', vegetables, 'sauces', sauces, 'toppings', toppings,
+        'preparation', prep_id, 'size', size_id, 'quantity', quantity,
+        'unitPrice', unit_price::integer, 'lineTotal', item_total::integer
+      ));
+    else
+      raise exception 'Unknown order item type';
+    end if;
+  end loop;
+
+  zone_rules := rules->'delivery'->p_delivery_zone;
+  if zone_rules is null or not coalesce((zone_rules->>'available')::boolean, false) then
+    raise exception 'Delivery zone is unavailable';
+  end if;
+  if subtotal >= (rules->>'freeDeliveryFrom')::numeric then
+    shipping := 0;
+  else
+    shipping := (zone_rules->>'fee')::numeric;
+  end if;
+  total := subtotal + shipping;
+  if total <= 0 or total > 2147483647 then raise exception 'Invalid order total'; end if;
+
+  return jsonb_build_object(
+    'items', validated_items,
+    'detail', array_to_string(detail_parts, ', '),
+    'subtotal', subtotal::integer,
+    'shipping', shipping::integer,
+    'total', total::integer
+  );
+end;
+$$;
+
+create or replace function public.create_order(
+  p_items jsonb,
+  p_delivery_city text,
+  p_delivery_address text,
+  p_delivery_zone text,
+  p_payment_method text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_user_id uuid := (select auth.uid());
+  current_name text;
+  current_email text;
+  quote jsonb;
+  created_order public.orders%rowtype;
+begin
+  if current_user_id is null then raise exception 'Authentication required'; end if;
+  if p_delivery_city is null or length(trim(p_delivery_city)) not between 1 and 120 then
+    raise exception 'Invalid delivery city';
+  end if;
+  if p_delivery_address is null or length(trim(p_delivery_address)) not between 1 and 300 then
+    raise exception 'Invalid delivery address';
+  end if;
+  if p_delivery_zone is null or p_delivery_zone not in ('envigado', 'medellin', 'sabaneta', 'bello') then
+    raise exception 'Invalid delivery zone';
+  end if;
+  if p_payment_method is null or p_payment_method not in ('contraentrega', 'transferencia', 'tarjeta') then
+    raise exception 'Invalid payment method';
+  end if;
+
+  select coalesce(nullif(profile.full_name, ''), auth_user.email), auth_user.email
+    into current_name, current_email
+    from auth.users as auth_user
+    left join public.profiles as profile on profile.id = auth_user.id
+    where auth_user.id = current_user_id;
+  if current_email is null then raise exception 'Authenticated profile not found'; end if;
+
+  quote := public.quote_order_items(p_items, p_delivery_zone);
+  insert into public.orders (
+    line_items, detail, total, delivery_city, delivery_address, delivery_zone, payment_method
+  ) values (
+    quote->'items', quote->>'detail', (quote->>'total')::integer,
+    trim(p_delivery_city), trim(p_delivery_address), p_delivery_zone, p_payment_method
+  ) returning * into created_order;
+
+  return jsonb_build_object(
+    'order_number', created_order.order_number,
+    'total', created_order.total,
+    'detail', created_order.detail
+  );
+end;
+$$;
+
+revoke all on function public.seed_pricing_catalog(jsonb) from public, anon;
+grant execute on function public.seed_pricing_catalog(jsonb) to authenticated;
+revoke all on function public.quote_order_items(jsonb, text) from public, anon, authenticated;
+revoke all on function public.create_order(jsonb, text, text, text, text) from public, anon;
+grant execute on function public.create_order(jsonb, text, text, text, text) to authenticated;
 
 alter table public.profiles enable row level security;
 alter table public.app_settings enable row level security;
@@ -133,8 +468,8 @@ grant insert, update, delete on public.app_settings to authenticated;
 
 revoke all on public.orders from anon, authenticated;
 grant select on public.orders to authenticated;
-grant insert (detail, total, delivery_city, delivery_address, delivery_zone, payment_method)
-  on public.orders to authenticated;
+revoke insert (detail, total, delivery_city, delivery_address, delivery_zone, payment_method, line_items)
+  on public.orders from authenticated;
 grant update (status) on public.orders to authenticated;
 
 drop policy if exists "Users read own profile or admins read all" on public.profiles;

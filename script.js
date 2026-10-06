@@ -401,6 +401,43 @@ function aplicarCambiosAdmin() {
   });
 }
 
+const PRECIOS_BASE_RECETAS = RECETAS.map(receta => receta.p);
+
+function generarCatalogoPrecios() {
+  return {
+    version: '1',
+    recipes: RECETAS.map((receta, index) => ({
+      name: receta.n,
+      price: PRECIOS_BASE_RECETAS[index],
+      preparation: receta.prep,
+      ingredients: receta.ing,
+      drink: Boolean(receta.bebida)
+    })),
+    ingredients: Object.fromEntries(Object.entries(ING).map(([id, ingrediente]) => [id, {
+      group: ingrediente.g,
+      price: ingrediente.p
+    }])),
+    bases: Object.fromEntries(BASES.map(base => [base.id, {
+      name: base.n,
+      price: base.p,
+      includedVegetables: base.incVeg,
+      includedSauces: base.incSalsa
+    }])),
+    preparations: Object.fromEntries(PREPARACIONES.map(preparacion => [preparacion.id, preparacion.rec])),
+    sizes: Object.fromEntries(TAMANOS.map(tamano => [tamano.id, tamano.rec])),
+    rules: {
+      minimumRecipe: PRECIO_MINIMO_PLATO,
+      extraVegetable: PRECIO_VEGETAL_EXTRA,
+      extraSauce: PRECIO_SALSA_EXTRA,
+      freeDeliveryFrom: ENVIO_GRATIS_DESDE,
+      delivery: Object.fromEntries(Object.entries(ZONAS_ENTREGA).map(([id, zona]) => [id, {
+        fee: zona.envio,
+        available: zona.disponible
+      }]))
+    }
+  };
+}
+
 aplicarCambiosAdmin();
 
 // Validación de datos del catálogo
@@ -509,6 +546,17 @@ function detalleRecetaActual() {
   return partes.length ? partes.join(', ') : 'Como viene en la carta';
 }
 
+function especificacionReceta(e) {
+  return {
+    type: 'recipe',
+    recipeIndex: e.indice,
+    removed: [...e.quitados],
+    added: [...e.agregados],
+    preparation: e.preparacion,
+    size: e.tamano
+  };
+}
+
 function guardarRecetaActual() {
   if (!recetaActual) return;
   const receta = recetaActual;
@@ -517,6 +565,7 @@ function guardarRecetaActual() {
     nombre: receta.receta.n,
     detalle: detalleRecetaActual(),
     unitario: precioReceta(receta),
+    pricingSpec: especificacionReceta(receta),
     tipo: 'recetaGuardada'
   };
   recetasGuardadas.unshift(guardada);
@@ -527,7 +576,17 @@ function guardarRecetaActual() {
 function repetirFavorito(indice) {
   const receta = RECETAS[indice];
   if (!receta) return;
-  carrito.push({ nombre: receta.n, tipo: 'receta', detalle: 'Como viene en la carta', unitario: receta.p, cantidad: 1, total: receta.p });
+  const seleccion = { indice, receta, quitados: [], agregados: [], preparacion: receta.prep, tamano: 'personal' };
+  const unitario = precioReceta(seleccion);
+  carrito.push({
+    nombre: receta.n,
+    tipo: 'receta',
+    detalle: 'Como viene en la carta',
+    unitario,
+    cantidad: 1,
+    total: unitario,
+    pricingSpec: especificacionReceta(seleccion)
+  });
   guardarCarrito();
   actualizarBotonCarrito();
   mostrarToast(`${receta.n} agregado al carrito.`);
@@ -536,7 +595,19 @@ function repetirFavorito(indice) {
 function repetirRecetaGuardada(indice) {
   const receta = recetasGuardadas[indice];
   if (!receta) return;
-  carrito.push({ ...receta, cantidad: 1, total: receta.unitario });
+  if (!receta.pricingSpec) {
+    mostrarToast('Esta combinación es anterior a la actualización. Vuelve a crearla para validar su precio.', 'aviso');
+    return;
+  }
+  carrito.push({
+    nombre: receta.nombre,
+    tipo: 'receta',
+    detalle: receta.detalle,
+    unitario: receta.unitario,
+    cantidad: 1,
+    total: receta.unitario,
+    pricingSpec: receta.pricingSpec
+  });
   guardarCarrito();
   actualizarBotonCarrito();
   mostrarToast(`${receta.nombre} agregado al carrito.`);
@@ -1275,7 +1346,17 @@ function guardarCarrito() {
 }
 
 function cargarCarrito() {
-  carrito = leerLocal('carritoBuffet', []) || [];
+  const guardado = leerLocal('carritoBuffet', []) || [];
+  carrito = Array.isArray(guardado) ? guardado.filter(item => item && Number.isInteger(item.cantidad) && item.cantidad > 0) : [];
+  carrito = carrito.map(item => {
+    if (item.pricingSpec || item.tipo !== 'receta' || item.detalle !== 'Como viene en la carta') return item;
+    const indice = RECETAS.findIndex(receta => receta.n === item.nombre);
+    if (indice < 0) return item;
+    const receta = RECETAS[indice];
+    const seleccion = { indice, receta, quitados: [], agregados: [], preparacion: receta.prep, tamano: 'personal' };
+    return { ...item, pricingSpec: especificacionReceta(seleccion) };
+  });
+  if (carrito.length !== guardado.length || carrito.some((item, indice) => item !== guardado[indice])) guardarCarrito();
   direccionEntrega = leerLocal('direccionBuffet', null);
 }
 
@@ -1324,6 +1405,7 @@ function agregarAlCarrito() {
     item = {
       nombre: e.receta.n,
       tipo: 'receta',
+      pricingSpec: especificacionReceta(e),
       detalle: partes.length ? partes.join(', ') : 'Como viene en la carta',
       unitario,
       cantidad: cantidadActual,
@@ -1342,6 +1424,16 @@ function agregarAlCarrito() {
     item = {
       nombre: armado.nombre.trim() || base.n + ' a tu gusto',
       tipo: 'armado',
+      pricingSpec: {
+        type: 'custom',
+        base: armado.base,
+        protein: armado.proteina,
+        vegetables: [...armado.vegetales],
+        sauces: [...armado.salsas],
+        toppings: [...armado.toppings],
+        preparation: armado.preparacion,
+        size: armado.tamano
+      },
       detalle: partes.join(', '),
       unitario,
       cantidad: cantidadActual,
@@ -1419,6 +1511,10 @@ function eliminarDelCarrito(i) {
 
 async function finalizarPedido() {
   if (!carrito.length) return;
+  if (carrito.some(item => !item.pricingSpec)) {
+    alert('El carrito contiene una combinación antigua que no podemos cotizar con seguridad. Elimínala y vuelve a crearla.');
+    return;
+  }
   const usuario = sesionActual;
   if (!usuario) {
     cerrarModal('modalCarrito');
@@ -1434,15 +1530,12 @@ async function finalizarPedido() {
     return;
   }
 
-  const detallePedido = carrito.map(item => `${item.nombre} x${item.cantidad}`).join(', ');
-  const totalPedido = totalCarrito();
   const boton = document.getElementById('btnConfirmarPedido');
   boton.disabled = true;
   let pedido;
   try {
     pedido = await tuPlatoDb.crearPedido({
-      detail: detallePedido,
-      total: totalPedido,
+      items: carrito.map(item => ({ ...item.pricingSpec, quantity: item.cantidad })),
       delivery_city: direccionEntrega.ciudad,
       delivery_address: direccionEntrega.direccion,
       delivery_zone: direccionEntrega.zona,
@@ -1460,7 +1553,7 @@ async function finalizarPedido() {
   guardarCarrito();
   actualizarBotonCarrito();
   cerrarModal('modalCarrito');
-  alert(`Pedido ${id} confirmado. Te avisaremos cuando esté listo.`);
+  alert(`Pedido ${id} confirmado por ${fmt(pedido.total)}. Te avisaremos cuando esté listo.`);
 }
 
 // Búsqueda
@@ -1770,7 +1863,11 @@ async function procesarLogin() {
     sesionActual = usuario;
 
     cerrarModal('modalAuth');
-    if (esAdministrador(usuario)) { window.location.href = 'Admin/admin.html'; return; }
+    if (esAdministrador(usuario)) {
+      await tuPlatoDb.sembrarCatalogoPrecios(generarCatalogoPrecios());
+      window.location.href = 'Admin/admin.html';
+      return;
+    }
     verificarSesion();
     alert('Hola, ' + usuario.nombre);
   } catch (error) {
@@ -1877,6 +1974,13 @@ window.onload = async function() {
     console.error('No se pudo restaurar la sesión de Supabase:', error);
   }
   try { localStorage.removeItem('usuarioSesion'); } catch (error) {}
+  if (sesionActual && sesionActual.admin) {
+    try {
+      await tuPlatoDb.sembrarCatalogoPrecios(generarCatalogoPrecios());
+    } catch (error) {
+      console.error('No se pudo inicializar el catálogo de precios:', error);
+    }
+  }
   aplicarTema(temaGuardado());
   mostrarAvisoCookies();
   cargarCarrito();
