@@ -56,9 +56,6 @@
     },
     async crearPedido(pedido) {
       return exigirOk(await client.from('orders').insert({
-        user_id: pedido.user_id,
-        customer_name: pedido.customer_name,
-        customer_email: pedido.customer_email,
         detail: pedido.detail,
         total: pedido.total,
         delivery_city: pedido.delivery_city,

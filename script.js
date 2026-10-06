@@ -1441,9 +1441,6 @@ async function finalizarPedido() {
   let pedido;
   try {
     pedido = await tuPlatoDb.crearPedido({
-      user_id: usuario.id,
-      customer_name: usuario.nombre,
-      customer_email: usuario.correo,
       detail: detallePedido,
       total: totalPedido,
       delivery_city: direccionEntrega.ciudad,
