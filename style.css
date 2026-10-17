@@ -1449,6 +1449,41 @@ body.oscuro .boton-bloque.oscuro {
   font-weight: 600;
 }
 
+.auth-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-status {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.auth-status[hidden] {
+  display: none;
+}
+
+.auth-status-error {
+  background: #fff0ed;
+  color: #a83220;
+}
+
+body.oscuro .auth-status-error {
+  background: #48251f;
+  color: #ffc2b7;
+}
+
 .perfil-info {
   text-align: left;
   margin: 20px 0;

@@ -136,22 +136,46 @@
 <!-- Modal de autenticación -->
 <div id="modalAuth" class="fondo-modal">
   <div class="modal-contenido">
-    <span class="cerrar-x" onclick="cerrarModal('modalAuth')">&times;</span>
+    <span id="cerrarAuth" class="cerrar-x" onclick="cerrarModal('modalAuth')">&times;</span>
     <div id="vistaLogin">
       <h3>Iniciar sesión</h3>
-      <input type="email" id="loginCorreo" placeholder="Correo electrónico">
-      <input type="password" id="loginPass" placeholder="Contraseña">
-      <button class="boton-bloque" onclick="procesarLogin()">Ingresar</button>
+      <form onsubmit="event.preventDefault(); procesarLogin()">
+        <input type="email" id="loginCorreo" placeholder="Correo electrónico" autocomplete="email" required>
+        <input type="password" id="loginPass" placeholder="Contraseña" autocomplete="current-password" required>
+        <button id="btnLogin" class="boton-bloque" type="submit">Ingresar</button>
+      </form>
+      <p class="texto-cambio"><button class="auth-link" type="button" onclick="cambiarVistaAuth('recuperar')">¿Olvidaste tu contraseña?</button></p>
       <p class="texto-cambio">¿Eres nuevo? <span onclick="cambiarVistaAuth('registro')">Regístrate aquí</span></p>
     </div>
     <div id="vistaRegistro" style="display:none;">
       <h3>Crear cuenta</h3>
-      <input type="text" id="regNombre" placeholder="Nombre">
-      <input type="email" id="regCorreo" placeholder="Correo electrónico">
-      <input type="password" id="regPass" placeholder="Contraseña">
-      <button class="boton-bloque" onclick="procesarRegistro()">Crear cuenta</button>
+      <form onsubmit="event.preventDefault(); procesarRegistro()">
+        <input type="text" id="regNombre" placeholder="Nombre" autocomplete="name" required>
+        <input type="email" id="regCorreo" placeholder="Correo electrónico" autocomplete="email" required>
+        <input type="password" id="regPass" placeholder="Contraseña (mínimo 8 caracteres)" autocomplete="new-password" minlength="8" required>
+        <button id="btnRegistro" class="boton-bloque" type="submit">Crear cuenta</button>
+      </form>
       <p class="texto-cambio">¿Ya tienes cuenta? <span onclick="cambiarVistaAuth('login')">Inicia sesión</span></p>
     </div>
+    <div id="vistaRecuperar" style="display:none;">
+      <h3>Recuperar contraseña</h3>
+      <p class="modal-nota">Te enviaremos un enlace seguro para crear una contraseña nueva.</p>
+      <form onsubmit="event.preventDefault(); solicitarRecuperacion()">
+        <input type="email" id="recuperarCorreo" placeholder="Correo electrónico" autocomplete="email" required>
+        <button id="btnEnviarRecuperacion" class="boton-bloque" type="submit">Enviar enlace</button>
+      </form>
+      <p class="texto-cambio"><button class="auth-link" type="button" onclick="cambiarVistaAuth('login')">Volver a iniciar sesión</button></p>
+    </div>
+    <div id="vistaActualizarPassword" style="display:none;">
+      <h3>Nueva contraseña</h3>
+      <p class="modal-nota">Elige y confirma la contraseña nueva de tu cuenta.</p>
+      <form onsubmit="event.preventDefault(); actualizarPassword()">
+        <input type="password" id="nuevaPassword" placeholder="Nueva contraseña (mínimo 8 caracteres)" autocomplete="new-password" minlength="8" required>
+        <input type="password" id="confirmarPassword" placeholder="Confirmar nueva contraseña" autocomplete="new-password" minlength="8" required>
+        <button id="btnActualizarPassword" class="boton-bloque" type="submit">Actualizar contraseña</button>
+      </form>
+    </div>
+    <p id="estadoAuth" class="auth-status" role="status" aria-live="polite" hidden></p>
   </div>
 </div>
 

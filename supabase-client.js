@@ -1,4 +1,9 @@
 (function () {
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const queryParams = new URLSearchParams(window.location.search);
+  const enlaceRecuperacionInicial =
+    hashParams.get('type') === 'recovery' ||
+    queryParams.get('type') === 'recovery';
   const client = window.supabase.createClient(
     'https://dntfjlwwaymsvvnxbdct.supabase.co',
     'sb_publishable_zQs5kR0lHPOWUAtM-2E0Ww_Ry5QpjWX'
@@ -34,10 +39,21 @@
 
   function limpiarDatosLocales() {
     ['usuarioSesion', 'carritoBuffet', 'direccionBuffet', 'favoritosBuffet', 'recetasBuffet']
-      .forEach(clave => localStorage.removeItem(clave));
+      .forEach(clave => {
+        try {
+          localStorage.removeItem(clave);
+        } catch (error) {
+          console.warn(`No se pudo limpiar el dato local "${clave}".`, error);
+        }
+      });
   }
 
   window.tuPlatoDb = {
+    enlaceRecuperacionInicial,
+    suscribirAuth(callback) {
+      const { data: { subscription } } = client.auth.onAuthStateChange(callback);
+      return () => subscription.unsubscribe();
+    },
     async obtenerUsuarioActual() {
       return obtenerUsuarioActual();
     },
@@ -54,6 +70,20 @@
       const { error } = await client.auth.signInWithPassword({ email: correo, password });
       if (error) throw error;
       return obtenerUsuarioActual();
+    },
+    async solicitarRestablecimiento(correo, redirectTo) {
+      const destino = new URL(redirectTo, window.location.origin);
+      if (destino.origin !== window.location.origin) {
+        throw new Error('La dirección de recuperación debe pertenecer a este sitio.');
+      }
+      const { error } = await client.auth.resetPasswordForEmail(correo, {
+        redirectTo: destino.toString()
+      });
+      if (error) throw error;
+    },
+    async actualizarPassword(password) {
+      const { error } = await client.auth.updateUser({ password });
+      if (error) throw error;
     },
     async cerrarSesion() {
       const { error } = await client.auth.signOut();

@@ -383,6 +383,7 @@ RECETAS.forEach(plato => {
 });
 
 let sesionActual = null;
+let modoRecuperacionPassword = tuPlatoDb.enlaceRecuperacionInicial;
 const configuracionAdminRemota = {};
 
 function aplicarCambiosAdmin() {
@@ -1515,7 +1516,7 @@ async function finalizarPedido() {
     alert('El carrito contiene una combinación antigua que no podemos cotizar con seguridad. Elimínala y vuelve a crearla.');
     return;
   }
-  const usuario = sesionActual;
+  const usuario = modoRecuperacionPassword ? null : sesionActual;
   if (!usuario) {
     cerrarModal('modalCarrito');
     abrirModal('modalAuth');
@@ -1619,7 +1620,7 @@ function ejecutarBusqueda(query) {
       cats.forEach(c => {
         html += `
           <div class="resultado-categoria" onclick="irACategoriaDesdeBusqueda('${c.id}')">
-            <img class="resultado-cat-imagen" src="${imagenOptimizada(c.img, 160, 55)}" ${atributosImagen()} alt="${c.label}" onerror="this.style.background='#EEE';this.removeAttribute('src')">
+            <img class="resultado-cat-imagen" src="${imagenOptimizada(c.img, 160, 55)}" ${atributosImagen()} alt="${escaparHTML(c.label)}" onerror="this.style.background='#EEE';this.removeAttribute('src')">
             <div class="resultado-cat-info">
               <div class="resultado-cat-nombre">${resaltar(c.label, query)}</div>
               <div class="resultado-cat-sub">${c.n} platos disponibles</div>
@@ -1681,7 +1682,7 @@ function esAdministrador(u) {
 }
 
 function abrirPanelAdmin() {
-  const u = leerLocal('usuarioSesion', null);
+  const u = modoRecuperacionPassword ? null : sesionActual;
   if (!esAdministrador(u)) { alert('Esta sección es exclusiva para administradores.'); return; }
   window.location.href = 'Admin/admin.html';
 }
@@ -1720,7 +1721,11 @@ function abrirLegal(tipo) {
 }
 
 function aceptarAvisoCookies() {
-  localStorage.setItem('avisoPrivacidadTuPlato', 'visto');
+  try {
+    localStorage.setItem('avisoPrivacidadTuPlato', 'visto');
+  } catch (error) {
+    console.warn('No se pudo guardar la preferencia de privacidad:', error);
+  }
   document.getElementById('avisoCookies').hidden = true;
 }
 
@@ -1739,7 +1744,12 @@ function aceptarAvisoCookies() {
 
 function mostrarAvisoCookies() {
   const aviso = document.getElementById('avisoCookies');
-  if (aviso) aviso.hidden = Boolean(localStorage.getItem('avisoPrivacidadTuPlato'));
+  if (!aviso) return;
+  try {
+    aviso.hidden = Boolean(localStorage.getItem('avisoPrivacidadTuPlato'));
+  } catch (error) {
+    console.warn('No se pudo leer la preferencia de privacidad:', error);
+  }
 }
 
 // Menú lateral
@@ -1761,7 +1771,7 @@ function toggleOtros() {
   document.getElementById('flechaOtros').classList.toggle('rotada');
 }
 function actualizarSidebarPerfil() {
-  const u = leerLocal('usuarioSesion', null);
+  const u = modoRecuperacionPassword ? null : sesionActual;
   const cont = document.getElementById('sidebarPerfil');
   if (u) {
     cont.innerHTML =
@@ -1813,11 +1823,41 @@ function actualizarZonaEntrega() {
 }
 
 // Modales y autenticación
-function abrirModal(id) { document.getElementById(id).style.display = 'block'; }
-function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
+function abrirModal(id) {
+  if (id === 'modalPerfil' && (modoRecuperacionPassword || !sesionActual)) return;
+  document.getElementById(id).style.display = 'block';
+}
+
+function cerrarModal(id) {
+  if (id === 'modalAuth' && modoRecuperacionPassword) return;
+  const modal = document.getElementById(id);
+  if (modal) modal.style.display = 'none';
+}
+
+function mostrarEstadoAuth(mensaje = '', tipo = 'info') {
+  const estado = document.getElementById('estadoAuth');
+  if (!estado) return;
+  estado.textContent = mensaje;
+  estado.className = `auth-status auth-status-${tipo}`;
+  estado.hidden = !mensaje;
+}
+
+function cambiarEstadoBotonAuth(id, ocupado, textoOcupado) {
+  const boton = document.getElementById(id);
+  if (!boton) return;
+  if (ocupado) {
+    boton.dataset.textoNormal = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = textoOcupado;
+  } else {
+    boton.disabled = false;
+    boton.textContent = boton.dataset.textoNormal || boton.textContent;
+    delete boton.dataset.textoNormal;
+  }
+}
 
 function gestionarClicAuth() {
-  const u = leerLocal('usuarioSesion', null);
+  const u = modoRecuperacionPassword ? null : sesionActual;
   if (u) {
     document.getElementById('dropdownUsuario').classList.toggle('mostrar');
   } else {
@@ -1834,49 +1874,173 @@ window.onclick = function(ev) {
 };
 
 function cambiarVistaAuth(v) {
+  if (modoRecuperacionPassword && v !== 'actualizarPassword') return;
+  mostrarEstadoAuth();
   document.getElementById('vistaLogin').style.display    = v === 'login'    ? 'block' : 'none';
   document.getElementById('vistaRegistro').style.display = v === 'registro' ? 'block' : 'none';
+  document.getElementById('vistaRecuperar').style.display = v === 'recuperar' ? 'block' : 'none';
+  document.getElementById('vistaActualizarPassword').style.display = v === 'actualizarPassword' ? 'block' : 'none';
+  const cerrar = document.getElementById('cerrarAuth');
+  if (cerrar) cerrar.style.display = modoRecuperacionPassword ? 'none' : 'block';
 }
 
 async function procesarRegistro() {
+  if (modoRecuperacionPassword) return;
   const nombre = document.getElementById('regNombre').value.trim();
   const correo = document.getElementById('regCorreo').value.trim().toLowerCase();
   const pass = document.getElementById('regPass').value;
-  if (!nombre || !correo || !pass) { alert('Llena todos los campos.'); return; }
+  if (!nombre || !correo || !pass) { mostrarEstadoAuth('Completa todos los campos para crear tu cuenta.', 'error'); return; }
+  if (pass.length < 8) { mostrarEstadoAuth('La contraseña debe tener al menos 8 caracteres.', 'error'); return; }
+  cambiarEstadoBotonAuth('btnRegistro', true, 'Creando cuenta…');
   try {
-    await tuPlatoDb.registrarse(nombre, correo, pass);
+    const resultado = await tuPlatoDb.registrarse(nombre, correo, pass);
+    if (modoRecuperacionPassword) return;
     document.getElementById('regPass').value = '';
-    alert('Cuenta creada. Revisa tu correo si Supabase solicita confirmar la dirección antes de iniciar sesión.');
+    if (resultado.session) {
+      try {
+        sesionActual = await tuPlatoDb.obtenerUsuarioActual();
+      } catch (error) {
+        console.error('La cuenta se creó, pero no se pudo cargar el perfil:', error);
+        mostrarEstadoAuth('Cuenta creada, pero no se pudo cargar tu perfil. Intenta iniciar sesión nuevamente.', 'error');
+        return;
+      }
+      if (!sesionActual) {
+        mostrarEstadoAuth('Cuenta creada, pero no se pudo validar tu perfil. Intenta iniciar sesión nuevamente.', 'error');
+        return;
+      }
+      cerrarModal('modalAuth');
+      verificarSesion();
+      mostrarToast(`Bienvenido, ${sesionActual.nombre}.`);
+      return;
+    }
+    mostrarEstadoAuth('Cuenta creada. Revisa tu correo para confirmar la dirección si Supabase lo solicita.');
     cambiarVistaAuth('login');
+    mostrarEstadoAuth('Cuenta creada. Revisa tu correo para confirmar la dirección si Supabase lo solicita.');
   } catch (error) {
-    alert(error.message || 'No se pudo crear la cuenta.');
+    mostrarEstadoAuth(error.message || 'No se pudo crear la cuenta. Inténtalo de nuevo.', 'error');
+  } finally {
+    cambiarEstadoBotonAuth('btnRegistro', false);
   }
 }
 
 async function procesarLogin() {
+  if (modoRecuperacionPassword) return;
   const correo = document.getElementById('loginCorreo').value.trim().toLowerCase();
   const pass = document.getElementById('loginPass').value;
-  if (!correo || !pass) { alert('Ingresa tu correo y contraseña.'); return; }
+  if (!correo || !pass) { mostrarEstadoAuth('Ingresa tu correo y contraseña.', 'error'); return; }
 
+  cambiarEstadoBotonAuth('btnLogin', true, 'Validando…');
+  mostrarEstadoAuth();
   try {
     const usuario = await tuPlatoDb.iniciarSesion(correo, pass);
+    if (modoRecuperacionPassword) return;
     sesionActual = usuario;
 
-    cerrarModal('modalAuth');
     if (esAdministrador(usuario)) {
-      await tuPlatoDb.sembrarCatalogoPrecios(generarCatalogoPrecios());
+      try {
+        await tuPlatoDb.sembrarCatalogoPrecios(generarCatalogoPrecios());
+      } catch (error) {
+        console.error('No se pudo inicializar el catálogo de precios:', error);
+      }
       window.location.href = 'Admin/admin.html';
       return;
     }
+    cerrarModal('modalAuth');
     verificarSesion();
-    alert('Hola, ' + usuario.nombre);
+    mostrarToast(`Hola, ${usuario.nombre}.`);
   } catch (error) {
-    alert(error.message || 'El correo o la contraseña no son correctos.');
+    mostrarEstadoAuth(error.message || 'No se pudo iniciar sesión. Verifica tus datos e inténtalo de nuevo.', 'error');
+  } finally {
+    cambiarEstadoBotonAuth('btnLogin', false);
+  }
+}
+
+async function solicitarRecuperacion() {
+  const correo = document.getElementById('recuperarCorreo').value.trim().toLowerCase();
+  const input = document.getElementById('recuperarCorreo');
+  if (!correo || !input.checkValidity()) {
+    mostrarEstadoAuth('Ingresa un correo electrónico válido.', 'error');
+    input.focus();
+    return;
+  }
+
+  cambiarEstadoBotonAuth('btnEnviarRecuperacion', true, 'Enviando…');
+  mostrarEstadoAuth();
+  try {
+    const destino = new URL(window.location.pathname, window.location.origin);
+    await tuPlatoDb.solicitarRestablecimiento(correo, destino.toString());
+    mostrarEstadoAuth('Si existe una cuenta con ese correo, recibirás un enlace para restablecer la contraseña.');
+  } catch (error) {
+    console.error('Error solicitando restablecimiento de contraseña:', error);
+    mostrarEstadoAuth(error.message || 'No se pudo enviar el correo. Inténtalo de nuevo.', 'error');
+  } finally {
+    cambiarEstadoBotonAuth('btnEnviarRecuperacion', false);
+  }
+}
+
+async function actualizarPassword() {
+  if (!modoRecuperacionPassword) {
+    mostrarEstadoAuth('Abre el enlace de recuperación enviado a tu correo para continuar.', 'error');
+    return;
+  }
+  const password = document.getElementById('nuevaPassword').value;
+  const confirmacion = document.getElementById('confirmarPassword').value;
+  if (!password || !confirmacion) {
+    mostrarEstadoAuth('Completa ambos campos de contraseña.', 'error');
+    return;
+  }
+  if (password.length < 8) {
+    mostrarEstadoAuth('La contraseña debe tener al menos 8 caracteres.', 'error');
+    document.getElementById('nuevaPassword').focus();
+    return;
+  }
+  if (password !== confirmacion) {
+    mostrarEstadoAuth('Las contraseñas no coinciden.', 'error');
+    document.getElementById('confirmarPassword').focus();
+    return;
+  }
+
+  cambiarEstadoBotonAuth('btnActualizarPassword', true, 'Actualizando…');
+  mostrarEstadoAuth();
+  try {
+    await tuPlatoDb.actualizarPassword(password);
+    modoRecuperacionPassword = false;
+    document.getElementById('nuevaPassword').value = '';
+    document.getElementById('confirmarPassword').value = '';
+    cambiarVistaAuth('login');
+    cerrarModal('modalAuth');
+    try {
+      sesionActual = await tuPlatoDb.obtenerUsuarioActual();
+      verificarSesion();
+      mostrarToast('Contraseña actualizada correctamente.');
+    } catch (error) {
+      sesionActual = null;
+      verificarSesion();
+      console.error('Contraseña actualizada, pero no se pudo validar la sesión:', error);
+      mostrarToast('Contraseña actualizada. Inicia sesión para continuar.', 'aviso');
+    }
+  } catch (error) {
+    console.error('Error actualizando la contraseña:', error);
+    mostrarEstadoAuth(error.message || 'No se pudo actualizar la contraseña. Solicita un enlace nuevo e inténtalo otra vez.', 'error');
+  } finally {
+    cambiarEstadoBotonAuth('btnActualizarPassword', false);
+  }
+}
+
+function activarRecuperacionPassword() {
+  modoRecuperacionPassword = true;
+  sesionActual = null;
+  document.getElementById('modalPerfil').style.display = 'none';
+  document.getElementById('dropdownUsuario').classList.remove('mostrar');
+  cambiarVistaAuth('actualizarPassword');
+  abrirModal('modalAuth');
+  if (window.location.hash || window.location.search) {
+    window.history.replaceState(null, document.title, window.location.pathname);
   }
 }
 
 function verificarSesion() {
-  const u = leerLocal('usuarioSesion', null);
+  const u = modoRecuperacionPassword ? null : sesionActual;
   const botonAuth = document.getElementById('btnAuthTrigger');
   const etiquetaAuth = u ? `Mi cuenta, ${u.nombre.split(' ')[0]}` : 'Ingresar';
   if (botonAuth) {
@@ -1889,21 +2053,14 @@ function verificarSesion() {
 }
 
 function abrirPerfil() {
-  const u = leerLocal('usuarioSesion', null);
+  const u = modoRecuperacionPassword ? null : sesionActual;
   if (!u) return;
   document.getElementById('perfilNombre').innerText = u.nombre;
   document.getElementById('perfilCorreo').innerText = u.correo;
   abrirModal('modalPerfil');
 }
 
-async function cerrarSesion() {
-  try {
-    await tuPlatoDb.cerrarSesion();
-  } catch (error) {
-    console.error('Error cerrando sesión en Supabase:', error);
-    alert('No se pudo cerrar la sesión. Revisa tu conexión e inténtalo de nuevo.');
-    return;
-  }
+function limpiarInterfazSesion() {
   sesionActual = null;
   carrito = [];
   favoritos = [];
@@ -1914,8 +2071,22 @@ async function cerrarSesion() {
   document.getElementById('inputDireccion').value = '';
   document.getElementById('txtUbicacion').innerText = 'Medellín, Envigado';
   document.getElementById('txtUbicacionSidebar').innerText = 'Medellín, Envigado';
+  document.getElementById('modalPerfil').style.display = 'none';
+  document.getElementById('dropdownUsuario').classList.remove('mostrar');
+  cerrarModal('modalAuth');
   actualizarBotonCarrito();
   verificarSesion();
+}
+
+async function cerrarSesion() {
+  try {
+    await tuPlatoDb.cerrarSesion();
+  } catch (error) {
+    console.error('Error cerrando sesión en Supabase:', error);
+    alert('No se pudo cerrar la sesión. Revisa tu conexión e inténtalo de nuevo.');
+    return;
+  }
+  limpiarInterfazSesion();
   alert('Sesión cerrada.');
 }
 
@@ -1958,29 +2129,44 @@ function actualizarNombresCategorias() {
 }
 
 // Inicio de la aplicación
-window.onload = async function() {
-  try {
-    Object.assign(configuracionAdminRemota, await tuPlatoDb.obtenerConfiguracion([
-      'adminCatalogo', 'adminPrecios', 'adminCategorias'
-    ]));
-    aplicarCambiosAdmin();
-  } catch (error) {
-    console.error('No se pudo cargar la configuración de Supabase:', error);
+tuPlatoDb.suscribirAuth(evento => {
+  if (evento === 'PASSWORD_RECOVERY') {
+    activarRecuperacionPassword();
+  } else if (evento === 'SIGNED_OUT' && !modoRecuperacionPassword) {
+    limpiarInterfazSesion();
   }
+});
+
+window.addEventListener('pageshow', async evento => {
+  if (!evento.persisted) return;
+  document.getElementById('modalPerfil').style.display = 'none';
+  document.getElementById('dropdownUsuario').classList.remove('mostrar');
+  sesionActual = null;
+  verificarSesion();
   try {
-    sesionActual = await tuPlatoDb.obtenerUsuarioActual();
+    const usuario = await tuPlatoDb.obtenerUsuarioActual();
+    if (modoRecuperacionPassword) {
+      sesionActual = null;
+      activarRecuperacionPassword();
+      return;
+    }
+    if (!usuario) {
+      limpiarInterfazSesion();
+      return;
+    }
+    sesionActual = usuario;
+    verificarSesion();
   } catch (error) {
     sesionActual = null;
-    console.error('No se pudo restaurar la sesión de Supabase:', error);
+    limpiarInterfazSesion();
+    console.error('No se pudo revalidar la sesión al volver a la página:', error);
+    mostrarToast('No se pudo validar la sesión. Inicia sesión de nuevo.', 'aviso');
   }
-  try { localStorage.removeItem('usuarioSesion'); } catch (error) {}
-  if (sesionActual && sesionActual.admin) {
-    try {
-      await tuPlatoDb.sembrarCatalogoPrecios(generarCatalogoPrecios());
-    } catch (error) {
-      console.error('No se pudo inicializar el catálogo de precios:', error);
-    }
-  }
+});
+
+async function iniciarAplicacion() {
+  let errorConfiguracion = null;
+  let errorSesion = null;
   aplicarTema(temaGuardado());
   mostrarAvisoCookies();
   cargarCarrito();
@@ -1999,4 +2185,55 @@ window.onload = async function() {
   actualizarNombresCategorias();
   verificarSesion();
   volverAlInicio();
-};
+  if (modoRecuperacionPassword) {
+    cambiarVistaAuth('actualizarPassword');
+    abrirModal('modalAuth');
+  }
+
+  const promesaConfiguracion = (async () => {
+    try {
+      Object.assign(configuracionAdminRemota, await tuPlatoDb.obtenerConfiguracion([
+        'adminCatalogo', 'adminPrecios', 'adminCategorias'
+      ]));
+      aplicarCambiosAdmin();
+      renderCategorias();
+      actualizarNombresCategorias();
+    } catch (error) {
+      console.error('No se pudo cargar la configuración de Supabase:', error);
+      errorConfiguracion = error;
+    }
+  })();
+  const promesaSesion = (async () => {
+    if (modoRecuperacionPassword) return;
+    try {
+      const usuario = await tuPlatoDb.obtenerUsuarioActual();
+      sesionActual = modoRecuperacionPassword ? null : usuario;
+    } catch (error) {
+      sesionActual = null;
+      errorSesion = error;
+      console.error('No se pudo restaurar la sesión de Supabase:', error);
+    }
+  })();
+  await Promise.all([promesaConfiguracion, promesaSesion]);
+  try {
+    localStorage.removeItem('usuarioSesion');
+  } catch (error) {
+    console.warn('No se pudo limpiar el estado de sesión local anterior:', error);
+  }
+  if (!modoRecuperacionPassword && sesionActual && sesionActual.admin) {
+    try {
+      await tuPlatoDb.sembrarCatalogoPrecios(generarCatalogoPrecios());
+    } catch (error) {
+      console.error('No se pudo inicializar el catálogo de precios:', error);
+    }
+  }
+  verificarSesion();
+  if (modoRecuperacionPassword) {
+    cambiarVistaAuth('actualizarPassword');
+    abrirModal('modalAuth');
+  }
+  if (errorSesion) mostrarToast('No se pudo validar tu sesión. Inicia sesión de nuevo.', 'aviso');
+  else if (errorConfiguracion) mostrarToast('No se pudo cargar la configuración en línea. Algunas opciones podrían estar desactualizadas.', 'aviso');
+}
+
+document.addEventListener('DOMContentLoaded', iniciarAplicacion, { once: true });
