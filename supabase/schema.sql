@@ -1,3 +1,7 @@
+-- Password recovery is handled by Supabase Auth (resetPasswordForEmail/updateUser),
+-- not by writing to auth.users. Allow the deployed storefront URL in Auth URL Configuration
+-- and set the Auth password minimum to 8 characters to match the storefront forms.
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text not null,
@@ -43,8 +47,8 @@ as $$
   );
 $$;
 
-revoke all on function public.is_admin() from public;
-grant execute on function public.is_admin() to anon, authenticated;
+revoke all on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
 
 create table if not exists public.app_settings (
   key text primary key,
@@ -478,8 +482,13 @@ create policy "Users read own profile or admins read all"
   using ((select auth.uid()) = id or (select public.is_admin()));
 
 drop policy if exists "Public reads storefront settings" on public.app_settings;
+drop policy if exists "Authenticated reads storefront settings" on public.app_settings;
 create policy "Public reads storefront settings"
-  on public.app_settings for select to anon, authenticated
+  on public.app_settings for select to anon
+  using (key in ('adminCatalogo', 'adminPrecios', 'adminCategorias'));
+
+create policy "Authenticated reads storefront settings"
+  on public.app_settings for select to authenticated
   using (key in ('adminCatalogo', 'adminPrecios', 'adminCategorias') or (select public.is_admin()));
 
 drop policy if exists "Admins insert settings" on public.app_settings;
