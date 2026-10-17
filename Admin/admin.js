@@ -1,3 +1,5 @@
+document.body.classList.add('admin-auth-pending');
+
 const categoriasBase = {
   asiatico: { label: 'Asiático', desc: 'Cocina asiática con ingredientes frescos y especias tradicionales.' },
   oriental: { label: 'Oriental', desc: 'Sabores de Oriente Medio con especias aromáticas y hierbas frescas.' },
@@ -225,7 +227,11 @@ function aplicarTemaAdmin(modo) {
     boton.innerText = oscuro ? '☀' : '☾';
     boton.title = oscuro ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro';
   }
-  localStorage.setItem('tema', modo);
+  try {
+    localStorage.setItem('tema', modo);
+  } catch (error) {
+    console.warn('No se pudo guardar el tema local:', error);
+  }
 }
 
 function alternarTemaAdmin() {
@@ -233,8 +239,13 @@ function alternarTemaAdmin() {
 }
 
 function temaInicialAdmin() {
-  const guardado = localStorage.getItem('tema');
-  return guardado || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro');
+  try {
+    const guardado = localStorage.getItem('tema');
+    if (guardado) return guardado;
+  } catch (error) {
+    console.warn('No se pudo leer el tema local:', error);
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro';
 }
 
 function mostrarToast(mensaje) {
@@ -244,7 +255,13 @@ function mostrarToast(mensaje) {
   setTimeout(() => toast.classList.remove('show'), 2400);
 }
 
-function volverATienda() { window.location.href = '../index.html'; }
+function establecerEstadoCargaAdmin(mensaje, error = false) {
+  const estado = document.getElementById('adminLoadStatus');
+  estado.textContent = mensaje;
+  estado.classList.toggle('admin-live-error', error);
+}
+
+function volverATienda() { window.location.replace('../index.html'); }
 async function cerrarSesionAdmin() {
   try {
     await tuPlatoDb.cerrarSesion();
@@ -255,15 +272,37 @@ async function cerrarSesionAdmin() {
   volverATienda();
 }
 
-window.onload = async function() {
-  aplicarTemaAdmin(temaInicialAdmin());
+tuPlatoDb.suscribirAuth(evento => {
+  if (evento === 'SIGNED_OUT') {
+    document.body.classList.add('admin-auth-pending');
+    volverATienda();
+  }
+});
+
+async function validarSesionAdmin() {
   try {
     usuarioAdminActual = await tuPlatoDb.obtenerUsuarioActual();
   } catch (error) {
     usuarioAdminActual = null;
+    console.error('No se pudo validar el acceso al panel:', error);
+    establecerEstadoCargaAdmin('No se pudo validar el acceso', true);
+    mostrarToast('No se pudo validar tu sesión. Vuelve a iniciar sesión.');
+    window.setTimeout(volverATienda, 1800);
+    return false;
   }
-  if (!esAdministrador()) { window.location.href = '../index.html'; return; }
+  if (!esAdministrador()) {
+    volverATienda();
+    return false;
+  }
   document.getElementById('adminUserName').innerText = usuarioAdminActual.nombre;
+  return true;
+}
+
+window.onload = async function() {
+  aplicarTemaAdmin(temaInicialAdmin());
+  if (!await validarSesionAdmin()) return;
+  document.body.classList.remove('admin-auth-pending');
+  establecerEstadoCargaAdmin('Cargando datos…');
   try {
     await cargarDatos();
     actualizarFiltroCategoria();
@@ -272,7 +311,20 @@ window.onload = async function() {
     renderPedidos();
     renderResumen();
     renderClientes();
+    establecerEstadoCargaAdmin('Sistema operativo');
   } catch (error) {
+    console.error('No se pudieron cargar los datos del panel:', error);
+    establecerEstadoCargaAdmin('Error al cargar los datos', true);
     mostrarToast(error.message || 'No se pudieron cargar los datos de Supabase.');
   }
 };
+
+window.addEventListener('pageshow', async evento => {
+  if (!evento.persisted) return;
+  document.body.classList.add('admin-auth-pending');
+  establecerEstadoCargaAdmin('Revalidando acceso…');
+  if (await validarSesionAdmin()) {
+    document.body.classList.remove('admin-auth-pending');
+    establecerEstadoCargaAdmin('Sistema operativo');
+  }
+});
